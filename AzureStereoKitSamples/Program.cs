@@ -62,7 +62,7 @@ namespace AzureStereoKitSamples
             while (SK.Step(() =>
             {
                 UI.WindowBegin("Azure Menu", ref _menuPose, new Vec2(0.5f, 0));
-                if (menuState == MenuState.SignedOut)
+                if (menuState != MenuState.SigningIn && menuState != MenuState.SigningOut)
                 {
                     if (UI.Button("Get Graph Data"))
                     {
@@ -94,42 +94,45 @@ namespace AzureStereoKitSamples
                             }
                         });
                     }
-                    else if (UI.Button("Exit"))
-                    {
-                        SK.Quit();
-                    }
                 }
-                else if (menuState == MenuState.SigningIn)
+                
+                if (menuState == MenuState.SignedIn && UI.Button("Sign Out"))
+                {
+                    menuState = MenuState.SigningOut;
+                    _resultText = String.Empty;
+
+                    TrySignOutAsync().ContinueWith((t) =>
+                    {
+                        if (t.Result)
+                        {
+                            menuState = MenuState.SignedOut;
+                        }
+                        else
+                        {
+                            menuState = MenuState.SignedIn;
+                        }
+                    });
+                }
+                
+                if (UI.Button("Exit"))
+                {
+                    SK.Quit();
+                }
+
+
+                if (menuState == MenuState.SigningIn)
                 {
                     UI.Text("Signing In...");
-                }
-                else if (menuState == MenuState.SignedIn)
-                {
-                    UI.Text(_resultText);
-
-                    if (UI.Button("Sign Out"))
-                    {
-                        menuState = MenuState.SigningOut;
-                        _resultText = String.Empty;
-
-                        TrySignOutAsync().ContinueWith((t) =>
-                        {
-                            if (t.Result)
-                            {
-                                menuState = MenuState.SignedOut;
-                            }
-                            else
-                            {
-                                menuState = MenuState.SignedIn;
-                            }
-                        });
-                    }
                 }
                 else if (menuState == MenuState.SigningOut)
                 {
                     UI.Text("Signing Out...");
                 }
-
+                else
+                {
+                    UI.Text(_resultText);
+                }
+                
                 UI.WindowEnd();
 
             })) ;
@@ -291,7 +294,8 @@ namespace AzureStereoKitSamples
                 await _publicClientApp.RemoveAsync(firstAccount).ConfigureAwait(false);
 
                 // user signs out dialogue
-                Debug.WriteLine("User has signed-out");
+                _resultText = "User has signed-out";
+                Debug.WriteLine(_resultText);
                 success = true;
             }
             catch (MsalException ex)
