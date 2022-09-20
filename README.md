@@ -10,3 +10,5 @@ https://learn.microsoft.com/en-us/azure/active-directory/develop/tutorial-v2-win
 ## Instruction:
 In the code, edit the client Id and tenant Id according to your application registration credentials. Also, edit the storage account URL according to you Azure Blob
 Storage setup.
+
+![UI Image](UI_hl2.jpg)
