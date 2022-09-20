@@ -1,5 +1,5 @@
 # AzureStereoKitUWPSamples
-In this repo, we demostrate usage of Azure Active Directory (AAD) based authentication of a user from a UWP StereoKit application runnning on Microsoft Hololens-2.
+In this repo, we demostrate usage of Microsoft Azure Active Directory (AAD) based authentication of a user from a UWP [StereoKit](https://stereokit.net/) application runnning on Microsoft Hololens-2.
 
 ## Azure Setup:
 Please look at the following samples to learn to do all the necessary setups using the Azure Portal.  
