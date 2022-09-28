@@ -1,4 +1,4 @@
-# AzureStereoKitUWPSamples
+# Azure StereoKit UWP Samples
 What’s the first thing that anyone creating any enterprise app will need to work out?
 - Authentication
 
