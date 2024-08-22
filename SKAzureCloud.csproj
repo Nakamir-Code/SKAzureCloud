@@ -72,12 +72,12 @@
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Common\AsyncHelper.cs" />
-    <Compile Include="Azure\AuthenticationHelper.cs" />
-    <Compile Include="Azure\AuthenticationManager.cs" />
+    <Compile Include="Nakamir.Common\AsyncHelper.cs" />
+    <Compile Include="Nakamir.Azure.Security\AuthenticationHelper.cs" />
+    <Compile Include="Nakamir.Azure.Security\AuthenticationManager.cs" />
     <Compile Include="AzureAuthenticationSample.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Common\TextDisplay.cs" />
+    <Compile Include="Nakamir.Common\TextDisplay.cs" />
   </ItemGroup>
   <ItemGroup>
     <AppxManifest Include="Package.appxmanifest">
