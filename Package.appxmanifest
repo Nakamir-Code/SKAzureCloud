@@ -8,13 +8,13 @@
 
   <Identity
     Name="aea2fd8f-6a8e-440e-8f33-50dc5b1cc42e"
-    Publisher="CN=abdul"
+    Publisher="CN=nakamir"
     Version="1.0.0.0" />
 
   <mp:PhoneIdentity PhoneProductId="aea2fd8f-6a8e-440e-8f33-50dc5b1cc42e" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
   <Properties>
-    <DisplayName>AzureStereoKitSamples</DisplayName>
+    <DisplayName>SKAzureCloud</DisplayName>
     <PublisherDisplayName>StereoKit</PublisherDisplayName>
     <Logo>Assets\Logo\Logo-50.png</Logo>
   </Properties>
