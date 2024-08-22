@@ -86,6 +86,15 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include=".gitignore" />
+    <Content Include="Assets\floor.hlsl" />
+    <Content Include="Assets\Logo\Logo-150.png" />
+    <Content Include="Assets\Logo\Logo-16.png" />
+    <Content Include="Assets\Logo\Logo-310.png" />
+    <Content Include="Assets\Logo\Logo-44.png" />
+    <Content Include="Assets\Logo\Logo-50.png" />
+    <Content Include="Assets\Logo\Logo-71.png" />
+    <Content Include="Assets\Logo\Logo-Wide150.png" />
+    <Content Include="Assets\Logo\Logo-Wide300.png" />
     <Content Include="Properties\Default.rd.xml" />
   </ItemGroup>
   <ItemGroup>
@@ -107,9 +116,7 @@
     <PackageReference Include="Microsoft.NETCore.UniversalWindowsPlatform" Version="6.2.14" />
     <PackageReference Include="StereoKit" Version="0.3.9" />
   </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Assets\Logo\" />
-  </ItemGroup>
+  <ItemGroup />
   <ItemGroup>
     <None Include="LICENSE" />
     <None Include="README.md" />

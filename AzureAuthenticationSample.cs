@@ -30,7 +30,7 @@ internal class AzureAuthenticationSample
         SigningIn,
         SignedIn,
         SigningOut,
-        UploadingBlob,
+        BlobStorageTest,
     };
 
     internal static void Main(string[] _)
@@ -75,7 +75,7 @@ internal class AzureAuthenticationSample
                     }
                     else if (UI.Button("Upload Blob"))
                     {
-                        _menuState = MenuState.UploadingBlob;
+                        _menuState = MenuState.SigningIn;
                         cancellationToken ??= new();
                         AuthenticationManager.Instance.Scopes = "https://storage.azure.com/.default";
                         UploadBlobAsync(BlobUrl, cancellationToken.Token).SafeFireAndCallback(() => SK.ExecuteOnMain(() => _menuState = MenuState.SignedIn));
@@ -110,6 +110,7 @@ internal class AzureAuthenticationSample
                     MenuState.SigningIn => "Signing In...",
                     MenuState.SignedIn => "Signed in as " + AuthenticationManager.Instance.Username,
                     MenuState.SigningOut => "Signing Out...",
+                    MenuState.BlobStorageTest => "Uploading and downloading blob...",
                     _ => string.Empty,
                 };
                 UI.Text(status);
@@ -147,6 +148,7 @@ internal class AzureAuthenticationSample
             {
                 throw new InvalidOperationException("Could not sign in!");
             }
+            SK.ExecuteOnMain(() => _menuState = MenuState.BlobStorageTest);
 
             TokenCredential tokenCredential = new AccessTokenCredential(accessToken);
             BlobClient blobClient = new(new(blobUrl), tokenCredential);
