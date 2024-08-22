@@ -10,10 +10,9 @@ that demonstrates user authentication using Microsoft Azure Active Directory.
 
 The application has demonstrations of:
 * Logging in / authenticating users via Azure Active Directory before they can use the StereoKit application.
-* Token acquisition using MSAL in a StereoKit-UWP application running on Hololens-2.
-* Using the acquired token to get data from Microsoft Graph API.
-* Using the acquired token to upload a blob to azure blob storage and then read the contents of the blob.
-* Both silent and interactive token acquisition is demonstrated.
+* Token acquisition using MSAL in a StereoKit-UWP application running on HoloLens 2.
+* Acquires the access token to upload a blob to Azure Blob Storage and then read back its contents.
+* Demonstrates both silent and interactive token acquisition.
 
 ## Azure Setup:
 Please look at the following samples to learn to do all the necessary setups using the Azure Portal.  
@@ -32,5 +31,9 @@ Some of the next features we are intersted in are:
 * Instead of typing in user-name and password, we are more intestesd in eye-scan + AAD based authentication.
 * Having a sample that demostrates upload of blob data to different storage accounts depending on which tenant the logged in
 user is from. e.g. If someone logs in from Company A, he/she will be automatically be uploading to a Azure Storage
-Account dedicated for that company A. Similarly, if a user logs in from Company-B, then the link to the blob 
-storage acccount automatically gets updated. Currently, this storage account link is hard-coded into the program.
+Account dedicated for that Company A. Similarly, if a user logs in from Company B, then the link to the blob 
+storage acccount automatically updates. Currently, this storage account link is hardcoded into the program.
+
+
+### Considerations for UWP
+The ``Microsoft.Identity.Client` pacckage (discontinued support for UWP)[https://github.com/AzureAD/microsoft-authentication-library-for-dotnet/issues/4427#issuecomment-2119973049], so the latest version must be 4.47.2 (the latest version not listed as vulnerable).

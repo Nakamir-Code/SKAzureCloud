@@ -51,6 +51,7 @@
 
   <Capabilities>
     <Capability Name="internetClientServer"/>
-    <Capability Name="internetClient"/>
-    <Capability Name="privateNetworkClientServer"/></Capabilities>
+    <Capability Name="privateNetworkClientServer"/>
+    <uap:Capability Name="enterpriseAuthentication"/>
+    <uap:Capability Name="userAccountInformation"/></Capabilities>
 </Package>
