@@ -12,7 +12,7 @@
     <DefaultLanguage>en-US</DefaultLanguage>
     <LangVersion>latest</LangVersion>
     <TargetPlatformIdentifier>UAP</TargetPlatformIdentifier>
-    <TargetPlatformVersion Condition=" '$(TargetPlatformVersion)' == '' ">10.0.19041.0</TargetPlatformVersion>
+    <TargetPlatformVersion Condition=" '$(TargetPlatformVersion)' == '' ">10.0.22621.0</TargetPlatformVersion>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <MinimumVisualStudioVersion>16</MinimumVisualStudioVersion>
     <FileAlignment>512</FileAlignment>
@@ -72,12 +72,24 @@
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="ILogContext.cs" />
+    <Compile Include="Nakamir.Security\AADToken.cs" />
+    <Compile Include="Nakamir.Security\BaseLoginProvider.cs" />
+    <Compile Include="Nakamir.Security\IAADLogger.cs" />
+    <Compile Include="Nakamir.Security\ILoginProvider.cs" />
     <Compile Include="Nakamir.Common\AsyncHelper.cs" />
-    <Compile Include="Nakamir.Azure.Security\AuthenticationHelper.cs" />
-    <Compile Include="Nakamir.Azure.Security\AuthenticationManager.cs" />
     <Compile Include="AzureAuthenticationSample.cs" />
+    <Compile Include="Nakamir.Security\IToken.cs" />
+    <Compile Include="Nakamir.Security\IUserStore.cs" />
+    <Compile Include="Nakamir.Security\LoginProviders\MSALLoginProvider.cs" />
+    <Compile Include="Nakamir.Security\LoginProviders\WABLoginProvider.cs" />
+    <Compile Include="Nakamir.Security\LoginProviders\WAMLoginProvider.cs" />
+    <Compile Include="Nakamir.Security\LoginProviders\WAMWABLoginProvider.cs" />
+    <Compile Include="Nakamir.Security\LoginProviders\WAPLoginProvider.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Nakamir.Common\TextDisplay.cs" />
+    <Compile Include="StereoKitLogger.cs" />
+    <Compile Include="ApplicationDataUserStore.cs" />
   </ItemGroup>
   <ItemGroup>
     <AppxManifest Include="Package.appxmanifest">

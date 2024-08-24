@@ -50,6 +50,8 @@
   </Applications>
 
   <Capabilities>
-    <Capability Name="internetClientServer"/>
-    <Capability Name="privateNetworkClientServer"/></Capabilities>
+    <Capability Name="privateNetworkClientServer"/>
+    <uap:Capability Name="enterpriseAuthentication"/>
+    <uap:Capability Name="userAccountInformation"/>
+    <Capability Name="internetClientServer"/></Capabilities>
 </Package>
