@@ -79,28 +79,28 @@ public class WAMLoginProvider(IAADLogger logger, IUserStore userStore, string cl
 
         Logger.Log($"Found Web Account Provider for organizations: {wap.DisplayName}");
 
-        //var accts = await WebAuthenticationCoreManager.FindAllAccountsAsync(wap);
+        var accts = await WebAuthenticationCoreManager.FindAllAccountsAsync(wap);
 
-        //Logger.Log($"Find All Accounts Status = {accts.Status}");
+        Logger.Log($"Find All Accounts Status = {accts.Status}");
 
-        //if (accts.Status == FindAllWebAccountsStatus.Success)
-        //{
-        //    foreach (var acct in accts.Accounts)
-        //    {
-        //        Logger.Log($"Account: {acct.UserName} {acct.State.ToString()}");
-        //    }
-        //}
+        if (accts.Status == FindAllWebAccountsStatus.Success)
+        {
+            foreach (var acct in accts.Accounts)
+            {
+                Logger.Log($"Account: {acct.UserName} {acct.State.ToString()}");
+            }
+        }
 
-        //var sap = await WebAuthenticationCoreManager.FindSystemAccountProviderAsync(wap.Id);
-        //if (sap != null)
-        //{
-        //    string displayName = "Not Found";
-        //    if (sap.User != null)
-        //    {
-        //        displayName = (string)await sap.User.GetPropertyAsync("DisplayName");
-        //        Logger.Log($"Found system account provider {sap.DisplayName} with user {displayName} {sap.User.AuthenticationStatus.ToString()}");
-        //    }
-        //}
+        var sap = await WebAuthenticationCoreManager.FindSystemAccountProviderAsync(wap.Id);
+        if (sap != null)
+        {
+            string displayName = "Not Found";
+            if (sap.User != null)
+            {
+                displayName = (string)await sap.User.GetPropertyAsync("DisplayName");
+                Logger.Log($"Found system account provider {sap.DisplayName} with user {displayName} {sap.User.AuthenticationStatus.ToString()}");
+            }
+        }
 
         Logger.Log("Web Account Provider: " + wap.DisplayName);
 

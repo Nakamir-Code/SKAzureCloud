@@ -28,7 +28,6 @@ internal class AzureAuthenticationSample : ILogContext
     private const string BlobUrl = "https://your-storage-account.blob.core.windows.net/container-name/blob-name";
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    //private const string BlobUrl = "https://stapidevusw001.blob.core.windows.net/komatsu/testt";
     private static bool UseCustomTenantId;
     private static bool UseCustomResource;
     private static string _resultText = string.Empty;
@@ -65,15 +64,17 @@ internal class AzureAuthenticationSample : ILogContext
         {
             string tenantId = UseCustomTenantId ? CustomTenantId : TenantId;
             string resource = UseCustomResource ? CustomResource : Resource;
-            return providerType switch
+            BaseLoginProvider baseLoginProvider = providerType switch
             {
                 LoginProviderType.MSAL => new MSALLoginProvider(sample.Logger, sample.UserStore, ClientId, tenantId),
                 LoginProviderType.WAB => new WABLoginProvider(sample.Logger, sample.UserStore, ClientId, tenantId),
-                LoginProviderType.WAM => new WAMLoginProvider(sample.Logger, sample.UserStore, ClientId, tenantId, resource),
+                LoginProviderType.WAM => new WAMLoginProvider(sample.Logger, sample.UserStore, ClientId, tenantId, resource, biometricsRequired: false),
                 LoginProviderType.WAMWAB => new WAMWABLoginProvider(sample.Logger, sample.UserStore, ClientId, tenantId, resource),
                 LoginProviderType.WAP => new WAPLoginProvider(sample.Logger, sample.UserStore, ClientId, tenantId),
                 _ => throw new NotImplementedException($"Login provider for {providerType} is not implemented.")
             };
+            sample.CurrentLoginProvider = baseLoginProvider;
+            return baseLoginProvider;
         }
         BaseLoginProvider loginProvider = GetLoginProvider(_currentProviderType);
         sample.CurrentLoginProvider = loginProvider;
