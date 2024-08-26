@@ -13,9 +13,10 @@ using Nakamir.Common;
 using Nakamir.Security;
 using Nakamir.Security.LoginProviders;
 using StereoKit;
+using StereoKit.Framework;
 using Windows.System;
 
-internal class AzureAuthenticationSample : ILogContext
+internal class AzureAuthenticationSample
 {
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     /// REPLACE THE PARAMETERS BELOW                                                                                               ///
@@ -53,31 +54,26 @@ internal class AzureAuthenticationSample : ILogContext
     };
 
     public IUserStore UserStore { get; } = new ApplicationDataUserStore();
-    public IAADLogger Logger { get; set; }
     public ILoginProvider CurrentLoginProvider { get; set; }
 
     internal static void Main(string[] _)
     {
         AzureAuthenticationSample sample = new();
-        sample.Logger = new StereoKitLogger(sample);
-        BaseLoginProvider GetLoginProvider(LoginProviderType providerType)
+        void ChangeLoginProvider(LoginProviderType providerType)
         {
             string tenantId = UseCustomTenantId ? CustomTenantId : TenantId;
             string resource = UseCustomResource ? CustomResource : Resource;
-            BaseLoginProvider baseLoginProvider = providerType switch
+            sample.CurrentLoginProvider = providerType switch
             {
-                LoginProviderType.MSAL => new MSALLoginProvider(sample.Logger, sample.UserStore, ClientId, tenantId),
-                LoginProviderType.WAB => new WABLoginProvider(sample.Logger, sample.UserStore, ClientId, tenantId),
-                LoginProviderType.WAM => new WAMLoginProvider(sample.Logger, sample.UserStore, ClientId, tenantId, resource, biometricsRequired: false),
-                LoginProviderType.WAMWAB => new WAMWABLoginProvider(sample.Logger, sample.UserStore, ClientId, tenantId, resource),
-                LoginProviderType.WAP => new WAPLoginProvider(sample.Logger, sample.UserStore, ClientId, tenantId),
+                LoginProviderType.MSAL => new MSALLoginProvider(sample.UserStore, ClientId, tenantId),
+                LoginProviderType.WAB => new WABLoginProvider(sample.UserStore, ClientId, tenantId),
+                LoginProviderType.WAM => new WAMLoginProvider(sample.UserStore, ClientId, tenantId, resource, biometricsRequired: false),
+                LoginProviderType.WAMWAB => new WAMWABLoginProvider(sample.UserStore, ClientId, tenantId, resource),
+                LoginProviderType.WAP => new WAPLoginProvider(sample.UserStore),
                 _ => throw new NotImplementedException($"Login provider for {providerType} is not implemented.")
             };
-            sample.CurrentLoginProvider = baseLoginProvider;
-            return baseLoginProvider;
         }
-        BaseLoginProvider loginProvider = GetLoginProvider(_currentProviderType);
-        sample.CurrentLoginProvider = loginProvider;
+        ChangeLoginProvider(_currentProviderType);
 
         // Initialize StereoKit
         SKSettings settings = new()
@@ -86,9 +82,8 @@ internal class AzureAuthenticationSample : ILogContext
             assetsFolder = "Assets",
         };
         if (!SK.Initialize(settings)) { Environment.Exit(1); }
-#if DEBUG
-        Log.Subscribe((level, text) => System.Diagnostics.Debug.WriteLine($"[SK {level}]: {text}"));
-#endif
+
+        SK.AddStepper<LogWindow>();
 
         Matrix floorTransform = Matrix.TS(0, -1.5f, 0, V.XYZ(30, 0.1f, 30));
         Material floorMaterial = new(Shader.FromFile("floor.hlsl"))
@@ -104,7 +99,7 @@ internal class AzureAuthenticationSample : ILogContext
         userWatcher.Added += async (_, args) =>
         {
             string username = await args.User.GetPropertyAsync(KnownUserProperties.AccountName) as string;
-            SK.ExecuteOnMain(() => { if (foundUsers.TryAdd(args.User.NonRoamableId, username) && foundUsers.Count == 1) loginProvider.LoginHint = username; });
+            SK.ExecuteOnMain(() => foundUsers.TryAdd(args.User.NonRoamableId, username));
         };
         userWatcher.Updated += async (_, args) =>
         {
@@ -129,7 +124,7 @@ internal class AzureAuthenticationSample : ILogContext
                 UI.PushEnabled(_menuState == MenuState.SignedOut);
                 UI.Label("Provider:  ");
                 UI.SameLine();
-                if (UI.Button(loginProvider.ProviderName))
+                if (UI.Button(sample.CurrentLoginProvider.ProviderName))
                 {
                     // Toggle through the LoginProviderType enum values
                     _currentProviderType = _currentProviderType switch
@@ -141,7 +136,7 @@ internal class AzureAuthenticationSample : ILogContext
                         LoginProviderType.WAP => LoginProviderType.MSAL,
                         _ => _currentProviderType // Fallback in case no match (though this shouldn't happen)
                     };
-                    loginProvider = GetLoginProvider(_currentProviderType);
+                    ChangeLoginProvider(_currentProviderType);
                 }
 
                 UI.Label("Tenant:    ");
@@ -149,7 +144,7 @@ internal class AzureAuthenticationSample : ILogContext
                 if (UI.Button(UseCustomTenantId ? CustomTenantId : TenantId))
                 {
                     UseCustomTenantId = !UseCustomTenantId;
-                    loginProvider = GetLoginProvider(_currentProviderType);
+                    ChangeLoginProvider(_currentProviderType);
                 }
 
                 if (_currentProviderType == LoginProviderType.WAM || _currentProviderType == LoginProviderType.WAMWAB)
@@ -159,11 +154,11 @@ internal class AzureAuthenticationSample : ILogContext
                     if (UI.Button(UseCustomResource ? CustomResource : Resource))
                     {
                         UseCustomResource = !UseCustomResource;
-                        loginProvider = GetLoginProvider(_currentProviderType);
+                        ChangeLoginProvider(_currentProviderType);
                     }
                 }
 
-                if (_currentProviderType == LoginProviderType.MSAL && loginProvider is MSALLoginProvider msalLoginProvider)
+                if (_currentProviderType == LoginProviderType.MSAL && sample.CurrentLoginProvider is MSALLoginProvider msalLoginProvider)
                 {
                     UI.Label("Use Device Code Flow?");
                     UI.SameLine();
@@ -181,27 +176,42 @@ internal class AzureAuthenticationSample : ILogContext
                     {
                         _menuState = MenuState.SigningIn;
                         cancellationToken ??= new();
-                        loginProvider.Resource = "https://graph.microsoft.com";
-                        loginProvider.LoginAsync(["User.Read"]).SafeFireAndCallback(result => SK.ExecuteOnMain(()
-                            => _menuState = string.IsNullOrEmpty(result?.Token) ? MenuState.SignedOut : MenuState.SignedIn));
+                        if (sample.CurrentLoginProvider is WAMLoginProvider wamLoginProvider)
+                        {
+                            wamLoginProvider.Resource = "https://graph.microsoft.com";
+                        }
+                        else if (sample.CurrentLoginProvider is WAMWABLoginProvider wamWabLoginProvider)
+                        {
+                            wamWabLoginProvider.Resource = "https://graph.microsoft.com";
+                        }
+                        sample.CurrentLoginProvider.LoginAsync(["User.Read"]).SafeFireAndCallback(result => SK.ExecuteOnMain(()
+                            => _menuState = string.IsNullOrEmpty(result) ? MenuState.SignedOut : MenuState.SignedIn));
                     }
                     else if (UI.Button("Upload Blob"))
                     {
                         _menuState = MenuState.SigningIn;
                         cancellationToken ??= new();
-                        loginProvider.Resource = "https://storage.azure.com";
-                        sample.UploadBlobAsync(BlobUrl, ["https://storage.azure.com/user_impersonation"], cancellationToken.Token).SafeFireAndCallback(result => SK.ExecuteOnMain(() => _menuState = result ? MenuState.SignedIn : MenuState.SignedOut));
+                        if (sample.CurrentLoginProvider is WAMLoginProvider wamLoginProvider)
+                        {
+                            wamLoginProvider.Resource = "https://storage.azure.com";
+                        }
+                        else if (sample.CurrentLoginProvider is WAMWABLoginProvider wamWabLoginProvider)
+                        {
+                            wamWabLoginProvider.Resource = "https://storage.azure.com";
+                        }
+                        sample.UploadBlobAsync(BlobUrl, ["https://storage.azure.com/user_impersonation"], cancellationToken.Token).SafeFireAndCallback(result =>
+                            SK.ExecuteOnMain(() => _menuState = result ? MenuState.SignedIn : MenuState.SignedOut));
                     }
 
-                    if (foundUsers.Count > 0)
+                    if (foundUsers.Count > 0 && _currentProviderType == LoginProviderType.MSAL && sample.CurrentLoginProvider is MSALLoginProvider loginHintProvider)
                     {
                         UI.Label("Select an account below to be the login hint:");
                         foreach (string foundUser in foundUsers.Values)
                         {
-                            bool isUser = !string.IsNullOrEmpty(loginProvider.LoginHint) && foundUser.Equals(loginProvider.LoginHint, StringComparison.Ordinal);
+                            bool isUser = !string.IsNullOrEmpty(loginHintProvider.LoginHint) && foundUser.Equals(loginHintProvider.LoginHint, StringComparison.Ordinal);
                             if (UI.Toggle(foundUser, ref isUser))
                             {
-                                loginProvider.LoginHint = isUser ? foundUser : null;
+                                loginHintProvider.LoginHint = isUser ? foundUser : null;
                             }
                         }
                     }
@@ -218,7 +228,8 @@ internal class AzureAuthenticationSample : ILogContext
                 {
                     _menuState = MenuState.SigningOut;
                     _resultText = string.Empty;
-                    loginProvider.SignOutAsync().SafeFireAndCallback(() => SK.ExecuteOnMain(() => _menuState = loginProvider.IsSignedIn ? MenuState.SignedIn : MenuState.SignedOut));
+                    sample.CurrentLoginProvider.LogoutAsync().SafeFireAndCallback(() =>
+                        SK.ExecuteOnMain(() => _menuState = string.IsNullOrEmpty(sample.CurrentLoginProvider.AccessToken) ? MenuState.SignedOut : MenuState.SignedIn));
                 }
 
                 if (UI.Button("Exit"))
@@ -230,7 +241,7 @@ internal class AzureAuthenticationSample : ILogContext
                 {
                     MenuState.SignedOut => "Signed Out",
                     MenuState.SigningIn => "Signing In...",
-                    MenuState.SignedIn => "Signed in as " + loginProvider.Username,
+                    MenuState.SignedIn => "Signed in as " + sample.CurrentLoginProvider.Username,
                     MenuState.SigningOut => "Signing Out...",
                     MenuState.BlobStorageTest => "Uploading and downloading blob...",
                     _ => string.Empty,
@@ -250,21 +261,6 @@ internal class AzureAuthenticationSample : ILogContext
         }
     }
 
-    public void ClearLog()
-    {
-        CurrentLoginProvider.ClearLog();
-        _resultText = string.Empty;
-    }
-
-    public void QueueLog(string msg, bool toConsole = false)
-    {
-        if (!toConsole)
-        {
-            SK.ExecuteOnMain(() => _resultText = msg);
-        }
-        Log.Info(msg);
-    }
-
     /// <summary>
     /// Gets token using MSAL and uses it to access Azure Blob Storage.
     /// After uploading a text file to a predefined container, it reads the content of the text file.
@@ -275,7 +271,7 @@ internal class AzureAuthenticationSample : ILogContext
         bool success = false;
         try
         {
-            string accessToken = (await CurrentLoginProvider.LoginAsync(scopes))?.Token;
+            string accessToken = await CurrentLoginProvider.LoginAsync(scopes);
             if (string.IsNullOrEmpty(accessToken))
             {
                 throw new InvalidOperationException("Could not sign in!");
@@ -288,17 +284,17 @@ internal class AzureAuthenticationSample : ILogContext
 
             // Upload content
             var uploadResponse = await blobClient.UploadAsync(new BinaryData(Guid.NewGuid().ToByteArray()), cancellationToken);
-            QueueLog($"Created container:{blobClient.Name} at{uploadResponse.Value.LastModified}");
+            Log.Info($"Created container:{blobClient.Name} at{uploadResponse.Value.LastModified}");
 
             // Download content to verify
             var content = await blobClient.DownloadContentAsync(cancellationToken);
             var contentGuid = new Guid(content.Value.Content.ToArray());
-            QueueLog($"File: {blobClient.Name},  Content: {contentGuid}");
+            Log.Info($"File: {blobClient.Name},  Content: {contentGuid}");
             success = true;
         }
         catch (Exception ex)
         {
-            QueueLog($"Error {nameof(UploadBlobAsync)}:{Environment.NewLine}{ex}");
+            Log.Err($"Error {nameof(UploadBlobAsync)}:{Environment.NewLine}{ex}");
         }
         return success;
     }

@@ -6,153 +6,159 @@ namespace Nakamir.Security.LoginProviders;
 using System;
 using System.Threading.Tasks;
 using Microsoft.Identity.Client;
+using StereoKit;
 
-public class MSALLoginProvider(IAADLogger Logger, IUserStore store, string clientId, string tenantId) : BaseLoginProvider(Logger, store, clientId, tenantId)
+#if WINDOWS_UWP
+using Nakamir.Common;
+using Windows.ApplicationModel.Core;
+using Windows.System;
+#endif
+
+public class MSALLoginProvider(IUserStore userStore, string clientId, string tenantId, bool useDeviceCodeFlow = false) : ILoginProvider
 {
-    public bool UseDeviceCodeFlow { get; set; } = false;
+    /// <summary>
+    /// Gets or sets a value indicating whether to provide a code for the user to sign in instead of their credentials.
+    /// </summary>
+    public bool UseDeviceCodeFlow { get; set; } = useDeviceCodeFlow;
 
-    public override string UserIdKey
+    /// <summary>
+    /// Gets or sets a username (i.e., email address) of the account to prevent manual typing.
+    /// </summary>
+    public string LoginHint { get; set; }
+
+    /// <inheritdoc/>
+    public string ProviderName => "Microsoft Authentication Library (MSAL)";
+
+    /// <inheritdoc/>
+    public string Description => "Microsoft Authentication Library (MSAL) enables developers to acquire tokens from the Microsoft identity platform endpoint in order to access secured web APIs. These web APIs can be the Microsoft Graph, other Microsoft APIs, third-party web APIs, or your own web API. MSAL is available for .NET, JavaScript, Android, and iOS, which support many different application architectures and platforms.";
+
+    /// <inheritdoc/>
+    public string UserIdKey => "UserIdMSAL";
+
+    /// <inheritdoc/>
+    public string AccessToken { get; private set; }
+
+    /// <inheritdoc/>
+    public string Username { get; private set; }
+
+    /// <inheritdoc/>
+    public async Task<string> LoginAsync(string[] scopes)
     {
-        get
-        {
-            return LoginHint is null ? "UserIdMSAL" : $"UserIdMSAL_{LoginHint}";
-        }
-    }
+        Log.Info("Logging in with MSAL...");
+        string url = $"https://login.microsoftonline.com/{tenantId}";
 
-    public string TenantId { get; } = tenantId;
+        string userId = userStore.GetUserId(UserIdKey);
+        Log.Info("User Id: " + userId);
 
-    public override string Description => $"Microsoft Authentication Library (MSAL) enables developers to acquire tokens from the Microsoft identity platform endpoint in order to access secured web APIs. These web APIs can be the Microsoft Graph, other Microsoft APIs, third-party web APIs, or your own web API. MSAL is available for .NET, JavaScript, Android, and iOS, which support many different application architectures and platforms.";
-
-    public override string ProviderName => $"Microsoft Authentication Library (MSAL)";
-
-    public override async Task<IToken> LoginAsync(string[] scopes)
-    {
-        Logger.Log("Logging in with MSAL...");
-        string url = $"https://login.microsoftonline.com/{TenantId}";
-
-        string userId = Store.GetUserId(UserIdKey);
-        Logger.Log("User Id: " + userId);
-
-        var ret = await Task.Run(async () =>
-        {
-            var app = PublicClientApplicationBuilder.Create(ClientId)
-                .WithAuthority(url)
-                .WithBroker()
-                .WithWindowsBrokerOptions(new WindowsBrokerOptions
-                {
-                    ListWindowsWorkAndSchoolAccounts = true,
-                })
-                .WithRedirectUri(NativeClientRedirectUri)
-                .WithLogging(LoggingCallback)
-                .Build();
-
-            IAccount account = null;
-            if (!string.IsNullOrEmpty(userId))
+        var app = PublicClientApplicationBuilder.Create(clientId)
+            .WithAuthority(url)
+            .WithBroker()
+            .WithWindowsBrokerOptions(new WindowsBrokerOptions
             {
-                account = await app.GetAccountAsync(userId);
-                if (account != null)
-                    Logger.Log($"Account found id = {account.HomeAccountId}");
+                ListWindowsWorkAndSchoolAccounts = true,
+            })
+            .WithRedirectUri("https://login.microsoftonline.com/common/oauth2/nativeclient")
+            .WithLogging(LoggingCallback)
+            .Build();
+
+        IAccount account = null;
+        if (!string.IsNullOrEmpty(userId))
+        {
+            account = await app.GetAccountAsync(userId);
+            if (account is not null)
+            {
+                Log.Info($"Account found id = {account.HomeAccountId}");
             }
+        }
 
-            AuthenticationResult authResult = null;
-
+        AuthenticationResult authResult = null;
+        try
+        {
+            authResult = await app.AcquireTokenSilent(scopes, account).ExecuteAsync();
+        }
+        catch (MsalUiRequiredException)
+        {
             try
             {
-                authResult = await app.AcquireTokenSilent(scopes, account).ExecuteAsync();
-            }
-            catch (MsalUiRequiredException)
-            {
-                try
+                if (!UseDeviceCodeFlow)
                 {
-                    if (!UseDeviceCodeFlow)
-                    {
 #if WINDOWS_UWP
-                        TaskCompletionSource<AuthenticationResult> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-                        await Windows.ApplicationModel.Core.CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, async () =>
-                        {
-                            try
-                            {
-                                tcs.SetResult(await app.AcquireTokenInteractive(scopes)
-                                    .WithLoginHint(LoginHint ?? string.Empty)
-                                    .ExecuteAsync());
-                            }
-                            catch (Exception ex)
-                            {
-                                tcs.SetException(ex);
-                            }
-                        }).AsTask();
-                        authResult = await tcs.Task;
+                    authResult = await CoreApplication.MainView.CoreWindow.Dispatcher.RunTaskAsync(
+                        () => app.AcquireTokenInteractive(scopes)
+                                 .WithLoginHint(LoginHint ?? string.Empty)
+                                 .ExecuteAsync());
 #else
                         authResult = await app.AcquireTokenInteractive(scopes).ExecuteAsync();
 #endif
-                    }
-                    else
+                }
+                else
+                {
+                    authResult = await app.AcquireTokenWithDeviceCode(scopes, async deviceCodeResult =>
                     {
-                        authResult = await app.AcquireTokenWithDeviceCode(scopes, async deviceCodeResult =>
-                        {
-                            Logger.Log(deviceCodeResult.Message);
-                            await Windows.ApplicationModel.Core.CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal,
-                                () => Windows.System.Launcher.LaunchUriAsync(new("https://microsoft.com/devicelogin")).AsTask().ConfigureAwait(false));
-                            //return Task.FromResult(0);
-                        })
-                        .ExecuteAsync();
-                    }
-                }
-                catch (MsalException msalEx)
-                {
-                    Logger.Log(msalEx.Message);
-                }
-                catch (Exception ex)
-                {
-                    Logger.Log(ex.Message);
+                        Log.Info(deviceCodeResult.Message);
+                        await CoreApplication.MainView.CoreWindow.Dispatcher.RunTaskAsync(
+                            () => Launcher.LaunchUriAsync(new("https://microsoft.com/devicelogin")).AsTask());
+                    })
+                    .ExecuteAsync();
                 }
             }
             catch (MsalException msalEx)
             {
-                Logger.Log(msalEx.Message);
+                Log.Err(msalEx.Message);
             }
             catch (Exception ex)
             {
-                Logger.Log(ex.Message);
+                Log.Err(ex.Message);
             }
+        }
+        catch (MsalException msalEx)
+        {
+            Log.Err(msalEx.Message);
+        }
+        catch (Exception ex)
+        {
+            Log.Err(ex.Message);
+        }
 
-            if (authResult == null)
-                return null;
-
-            Username = authResult.Account.Username;
-
-            Logger.Log("Acquired Access Token");
-            Logger.Log("Access Token: " + authResult.AccessToken, true);
-
-            return authResult;
-        });
-
-        if (ret is null)
+        if (authResult is null)
         {
             return null;
         }
 
-        if (ret.Account != null && !string.IsNullOrEmpty(ret.Account.HomeAccountId.Identifier))
+        Username = authResult.Account.Username;
+
+        Log.Info("Acquired Access Token");
+        Log.Info("Access Token: " + authResult.AccessToken);
+
+        if (authResult.Account is not null && !string.IsNullOrEmpty(authResult.Account.HomeAccountId.Identifier))
         {
-            Store.SaveUser(UserIdKey, ret.Account.HomeAccountId.Identifier);
+            userStore.SaveUser(UserIdKey, authResult.Account.HomeAccountId.Identifier);
         }
 
-        AADToken = ret.AccessToken;
-        return new AADToken(ret.AccessToken);
+        AccessToken = authResult.AccessToken;
+        return AccessToken;
     }
 
-    public override Task SignOutAsync()
+    /// <inheritdoc/>
+    public Task LogoutAsync()
     {
-        Logger.Clear();
-        Store.ClearUser(UserIdKey);
-        AADToken = string.Empty;
+        userStore.ClearUser(UserIdKey);
         AccessToken = string.Empty;
         Username = string.Empty;
         return Task.CompletedTask;
     }
 
-    private void LoggingCallback(LogLevel level, string message, bool containsPii)
+    /// <inheritdoc/>
+    public void ClearUser() => userStore.ClearUser(UserIdKey);
+
+    private void LoggingCallback(Microsoft.Identity.Client.LogLevel level, string message, bool containsPii)
     {
-        Logger.Log(message, true);
+        switch (level)
+        {
+            case Microsoft.Identity.Client.LogLevel.Error: Log.Err(message); break;
+            case Microsoft.Identity.Client.LogLevel.Warning: Log.Warn(message); break;
+            case Microsoft.Identity.Client.LogLevel.Info: Log.Info(message); break;
+            default: Log.Write(StereoKit.LogLevel.Diagnostic, message); break;
+        }
     }
 }

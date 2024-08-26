@@ -1,4 +1,5 @@
-﻿// <copyright file="WAMWABLoginProvider.cs" company="Nakamir, Inc.">
+﻿#if WINDOWS_UWP
+// <copyright file="WAMWABLoginProvider.cs" company="Nakamir, Inc.">
 // Copyright (c) Nakamir, Inc. All rights reserved.
 // </copyright>
 namespace Nakamir.Security;
@@ -6,204 +7,195 @@ namespace Nakamir.Security;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
-
-#if WINDOWS_UWP
+using Nakamir.Common;
+using StereoKit;
+using Windows.ApplicationModel.Core;
 using Windows.Security.Authentication.Web;
 using Windows.Security.Authentication.Web.Core;
 using Windows.Security.Credentials;
-using Windows.UI.Xaml;
-#endif
 
-public class WAMWABLoginProvider(IAADLogger Logger, IUserStore userStore, string clientId, string tenantId, string resource) : BaseLoginProvider(Logger, userStore, clientId, tenantId, resource)
+public class WAMWABLoginProvider(IUserStore userStore, string clientId, string tenantId, string resource) : ILoginProvider
 {
-    public override string UserIdKey
+    /// <summary>
+    /// Gets or sets the resource for authentication.
+    /// </summary>
+    public string Resource { get; set; } = resource;
+
+    /// <inheritdoc/>
+    public string ProviderName => $"WebAuthenticationBroker & WebAuthenticationCoreManager";
+
+    /// <inheritdoc/>
+    public string Description => "Contains methods to log in with a combination of WebAuthenticationBroker and WebAuthenticationCoreManager.";
+
+    /// <inheritdoc/>
+    public string UserIdKey => "UserIdWAMWAB";
+
+    /// <inheritdoc/>
+    public string AccessToken { get; private set; }
+
+    /// <inheritdoc/>
+    public string Username { get; private set; }
+
+    /// <inheritdoc/>
+    public async Task<string> LoginAsync(string[] scopes)
     {
-        get
-        {
-            return LoginHint is null ? "UserIdWAMWAB" : $"UserIdWAMWAB_{LoginHint}";
-        }
-    }
-
-    public override string Description => $"";
-
-    public override string ProviderName => $"WebAuthenticationBroker & WebAuthenticationCoreManager";
-
-    public async override Task<IToken> LoginAsync(string[] scopes)
-    {
-        Logger.Log("Logging in with a combination of WebAuthenticationBroker and WebAuthenticationCoreManager...");
+        Log.Info("Logging in with a combination of WAM and WAB...");
 
         string accessToken = string.Empty;
-#if WINDOWS_UWP
-        // RUN THIS ON HOLOLENS - SEE IF WE GET A SYSTEM DIALOG IN AN IMMERSIVE APP
-        //
-        string userId = Store.GetUserId(UserIdKey);
-        Logger.Log("User Id: " + userId);
+
+        string userId = userStore.GetUserId(UserIdKey);
+        Log.Info("User Id: " + userId);
 
         //string URI = string.Format("ms-appx-web://Microsoft.AAD.BrokerPlugIn/{0}", 
         //    WebAuthenticationBroker.GetCurrentApplicationCallbackUri().Host.ToUpper());
-        WebAccountProvider wap =
-            await WebAuthenticationCoreManager.FindAccountProviderAsync("https://login.microsoft.com", Authority);
+        WebAccountProvider accountProvider = await WebAuthenticationCoreManager.FindAccountProviderAsync(
+            "https://login.microsoft.com", $"https://login.microsoftonline.com/{tenantId}");
 
-        Logger.Log($"Found Web Account Provider for organizations: {wap.DisplayName}");
+        Log.Info($"Found Web Account Provider for organizations: {accountProvider.DisplayName}");
 
-        var accts = await WebAuthenticationCoreManager.FindAllAccountsAsync(wap);
+        var accts = await WebAuthenticationCoreManager.FindAllAccountsAsync(accountProvider);
 
-        Logger.Log($"Find All Accounts Status = {accts.Status}");
+        Log.Info($"Find All Accounts Status = {accts.Status}");
 
-        if (accts.Status == FindAllWebAccountsStatus.Success)
+        if (accts.Status is FindAllWebAccountsStatus.Success)
         {
             foreach (var acct in accts.Accounts)
             {
-                Logger.Log($"Account: {acct.UserName} {acct.State.ToString()}");
+                Log.Info($"Account: {acct.UserName} {acct.State.ToString()}");
             }
         }
 
-        var sap = await WebAuthenticationCoreManager.FindSystemAccountProviderAsync(wap.Id);
-        if (sap != null)
+        var sap = await WebAuthenticationCoreManager.FindSystemAccountProviderAsync(accountProvider.Id);
+        if (sap is not null)
         {
             string displayName = "Not Found";
-            if (sap.User != null)
+            if (sap.User is not null)
             {
                 displayName = (string)await sap.User.GetPropertyAsync("DisplayName");
-                Logger.Log($"Found system account provider {sap.DisplayName} with user {displayName} {sap.User.AuthenticationStatus.ToString()}");
+                Log.Info($"Found system account provider {sap.DisplayName} with user {displayName} {sap.User.AuthenticationStatus}");
             }
         }
 
-        Logger.Log("Web Account Provider: " + wap.DisplayName);
+        Log.Info("Web Account Provider: " + accountProvider.DisplayName);
 
         //string resource = "https://sts.mixedreality.azure.com";
         //var scope = "https://management.azure.com/user_impersonation";
-        //WebTokenRequest wtr = new WebTokenRequest(wap, scope, "3c663152-fdf9-4033-963f-c398c21212d9");
-        //WebTokenRequest wtr = new WebTokenRequest(wap, scope, "5c8c830a-4cf8-470e-ba0d-6d815feba800");
+        //WebTokenRequest wtr = new WebTokenRequest(accountProvider, scope, "3c663152-fdf9-4033-963f-c398c21212d9");
+        //WebTokenRequest wtr = new WebTokenRequest(accountProvider, scope, "5c8c830a-4cf8-470e-ba0d-6d815feba800");
 
         string scope = string.Join(' ', scopes.Select(Uri.EscapeDataString));
-        WebTokenRequest wtr = new WebTokenRequest(wap, scope, ClientId);
-        wtr.Properties.Add("resource", Resource);
+        WebTokenRequest tokenRequest = new(accountProvider, scope, clientId);
+        tokenRequest.Properties.Add("resource", Resource);
 
         WebAccount account = null;
-
-        if (!string.IsNullOrEmpty((string)userId))
+        if (!string.IsNullOrEmpty(userId))
         {
-            account = await WebAuthenticationCoreManager.FindAccountAsync(wap, (string)userId);
-            if (account != null)
+            account = await WebAuthenticationCoreManager.FindAccountAsync(accountProvider, userId);
+            if (account is not null)
             {
-                Logger.Log("Found account: " + account.UserName);
+                Log.Info("Found account: " + account.UserName);
             }
             else
             {
-                Logger.Log("Account not found");
+                Log.Info("Account not found");
             }
         }
 
         WebTokenRequestResult tokenResponse = null;
         try
         {
-            if (account != null)
-            {
-                tokenResponse = await WebAuthenticationCoreManager.GetTokenSilentlyAsync(wtr, account);
-            }
-            else
-            {
-                tokenResponse = await WebAuthenticationCoreManager.GetTokenSilentlyAsync(wtr);
-            }
+            tokenResponse = account is not null
+                ? await WebAuthenticationCoreManager.GetTokenSilentlyAsync(tokenRequest, account)
+                : await WebAuthenticationCoreManager.GetTokenSilentlyAsync(tokenRequest);
         }
         catch (Exception ex)
         {
-            Logger.Log(ex.Message);
+            Log.Err(ex.Message);
         }
 
-        Logger.Log("Silent Token Response: " + tokenResponse.ResponseStatus.ToString());
-        if (tokenResponse.ResponseError != null)
+        Log.Info("Silent Token Response: " + tokenResponse.ResponseStatus.ToString());
+        if (tokenResponse.ResponseError is not null)
         {
-            Logger.Log("Error Code: " + tokenResponse.ResponseError.ErrorCode.ToString());
-            Logger.Log("Error Msg: " + tokenResponse.ResponseError.ErrorMessage.ToString());
+            Log.Err("Error Code: " + tokenResponse.ResponseError.ErrorCode.ToString());
+            Log.Err("Error Msg: " + tokenResponse.ResponseError.ErrorMessage.ToString());
             foreach (var errProp in tokenResponse.ResponseError.Properties)
             {
-                Logger.Log($"Error prop: ({errProp.Key}, {errProp.Value})");
+                Log.Err($"Error prop: ({errProp.Key}, {errProp.Value})");
             }
         }
 
-        if (tokenResponse.ResponseStatus == WebTokenRequestStatus.UserInteractionRequired)
+        if (tokenResponse.ResponseStatus is WebTokenRequestStatus.UserInteractionRequired)
         {
-            var redirectUri = WebAuthenticationBroker.GetCurrentApplicationCallbackUri().AbsoluteUri;
+            string redirectUri = WebAuthenticationBroker.GetCurrentApplicationCallbackUri().AbsoluteUri;
 
-            var state = Guid.NewGuid().ToString();
-            var nonce = Guid.NewGuid().ToString();
+            string state = Guid.NewGuid().ToString();
+            string nonce = Guid.NewGuid().ToString();
 
             //string url = "https://login.microsoftonline.com/common";
             string url = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
 
             var uri = new Uri($"{url}?" +
-                $"client_id={ClientId}&" +
+                $"client_id={clientId}&" +
+                $"tenant_id={tenantId}&" + // TODO: needed?
                 //$"scope={scope} openid&" +
                 $"response_type=token&" +
                 $"state={Uri.EscapeDataString(state)}&" +
                 $"nonce={Uri.EscapeDataString(nonce)}&" +
                 $"redirect_uri={Uri.EscapeDataString(redirectUri)}");
 
-
-            TaskCompletionSource<WebAuthenticationResult> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            await Windows.ApplicationModel.Core.CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, async () =>
-            {
-                try
-                {
-                    Window.Current.Activate();
-                    tcs.SetResult(await WebAuthenticationBroker.AuthenticateAsync(WebAuthenticationOptions.None, uri, new Uri(redirectUri)));
-                }
-                catch (Exception ex)
-                {
-                    tcs.SetException(ex);
-                }
-            }).AsTask();
-            var result = await tcs.Task;
+            var result = await CoreApplication.MainView.CoreWindow.Dispatcher.RunTaskAsync(
+                () => WebAuthenticationBroker.AuthenticateAsync(WebAuthenticationOptions.None, uri, new Uri(redirectUri)).AsTask());
 
             switch (result.ResponseStatus)
             {
                 case WebAuthenticationStatus.Success:
-                    Logger.Log("Authentication Successful!");
-                    Logger.Log("Received data:");
-                    Logger.Log(result.ResponseData);
-                    accessToken = result.ResponseData.Split('=')[1];
+                    Log.Info("Authentication Successful!");
+                    Log.Info("Received data:");
+                    Log.Info(result.ResponseData);
+                    AccessToken = result.ResponseData.Split('=')[1];
                     break;
                 case WebAuthenticationStatus.UserCancel:
-                    Logger.Log("User cancelled authentication. Try again.");
+                    Log.Info("User cancelled authentication. Try again.");
                     break;
                 case WebAuthenticationStatus.ErrorHttp:
-                    Logger.Log("HTTP Error. Try again.");
-                    Logger.Log(result.ResponseErrorDetail.ToString());
+                    Log.Err("HTTP Error. Try again.");
+                    Log.Err(result.ResponseErrorDetail.ToString());
                     break;
                 default:
-                    Logger.Log("Unknown Response");
+                    Log.Err("Unknown Response");
                     break;
             }
 
-            if (account != null && !string.IsNullOrEmpty(account.Id))
+            if (account is not null && !string.IsNullOrEmpty(account.Id))
             {
-                Store.SaveUser(UserIdKey, account.Id);
+                userStore.SaveUser(UserIdKey, account.Id);
             }
         }
-#endif
-        return new AADToken(accessToken);
+
+        return accessToken;
     }
 
-    public override async Task SignOutAsync()
+    /// <inheritdoc/>
+    public async Task LogoutAsync()
     {
-        Logger.Clear();
-        string userId = Store.GetUserId(UserIdKey);
-        if (!string.IsNullOrEmpty((string)userId))
+        string userId = userStore.GetUserId(UserIdKey);
+        if (string.IsNullOrEmpty(userId))
         {
-#if WINDOWS_UWP
-
-            WebAccountProvider wap =
-                await WebAuthenticationCoreManager.FindAccountProviderAsync("https://login.microsoft.com", Authority);
-            var account = await WebAuthenticationCoreManager.FindAccountAsync(wap, userId);
-            Logger.Log($"Found account: {account.UserName} State: {account.State.ToString()}");
-            await account.SignOutAsync();
-#endif
-            Store.ClearUser(UserIdKey);
-            Username = string.Empty;
-            AADToken = string.Empty;
-            AccessToken = string.Empty;
+            return;
         }
+
+        WebAccountProvider wap = await WebAuthenticationCoreManager.FindAccountProviderAsync(
+            "https://login.microsoft.com", $"https://login.microsoftonline.com/{tenantId}");
+        WebAccount account = await WebAuthenticationCoreManager.FindAccountAsync(wap, userId);
+        Log.Info($"Found account: {account.UserName} State: {account.State}");
+        await account.SignOutAsync();
+        userStore.ClearUser(UserIdKey);
+        AccessToken = string.Empty;
+        Username = string.Empty;
     }
+
+    /// <inheritdoc/>
+    public void ClearUser() => userStore.ClearUser(UserIdKey);
+
 }
+#endif

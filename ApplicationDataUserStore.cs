@@ -3,14 +3,14 @@
 // </copyright>
 namespace SKAzureCloud;
 
-using Nakamir.Security;
 using Windows.Storage;
+using Nakamir.Security;
 
 public class ApplicationDataUserStore : IUserStore
 {
-    public void ClearUser(string key)
+    public void SaveUser(string key, string userId)
     {
-        ApplicationData.Current.RoamingSettings.Values[key] = null;
+        ApplicationData.Current.RoamingSettings.Values[key] = userId;
     }
 
     public string GetUserId(string key)
@@ -18,8 +18,8 @@ public class ApplicationDataUserStore : IUserStore
         return (string)ApplicationData.Current.RoamingSettings.Values[key];
     }
 
-    public void SaveUser(string key, string userId)
+    public void ClearUser(string key)
     {
-        ApplicationData.Current.RoamingSettings.Values[key] = userId;
+        ApplicationData.Current.RoamingSettings.Values[key] = null;
     }
 }

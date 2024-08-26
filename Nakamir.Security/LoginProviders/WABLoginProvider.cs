@@ -1,4 +1,5 @@
-﻿// <copyright file="WABLoginProvider.cs" company="Nakamir, Inc.">
+﻿#if WINDOWS_UWP
+// <copyright file="WABLoginProvider.cs" company="Nakamir, Inc.">
 // Copyright (c) Nakamir, Inc. All rights reserved.
 // </copyright>
 namespace Nakamir.Security;
@@ -6,41 +7,44 @@ namespace Nakamir.Security;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
-#if WINDOWS_UWP
+using Windows.ApplicationModel.Core;
 using Windows.Security.Authentication.Web;
-#endif
+using Nakamir.Common;
+using StereoKit;
 
-public class WABLoginProvider(IAADLogger Logger, IUserStore userStore, string clientId, string tenantId) : BaseLoginProvider(Logger, userStore, clientId, tenantId)
+public class WABLoginProvider(IUserStore userStore, string clientId, string tenantId) : ILoginProvider
 {
-    public override string UserIdKey
+    /// <inheritdoc/>
+    public string ProviderName => "WebAuthenticationBroker";
+
+    /// <inheritdoc/>
+    public string Description => "WebAuthenticationBroker facilitates acquisition of authorization tokens using OAuth by handling the presentation and redirects of an identity provider page and returning the tokens back to your app.";
+
+    /// <inheritdoc/>
+    public string UserIdKey => "UserIdWAB";
+
+    /// <inheritdoc/>
+    public string AccessToken { get; private set; }
+
+    /// <inheritdoc/>
+    public string Username { get; private set; }
+
+    /// <inheritdoc/>
+    public async Task<string> LoginAsync(string[] scopes)
     {
-        get
-        {
-            return LoginHint is null ? "UserIdWAB" : $"UserIdWAB_{LoginHint}";
-        }
-    }
+        Log.Info("Logging in with WAB...");
 
-    public override string Description => $"WebAuthenticationBroker facilitates acquisition of auth tokens using OAuth by handling the presentation and redirects of an identity provider page and returning the tokens back to your app.";
+        string redirectUri = WebAuthenticationBroker.GetCurrentApplicationCallbackUri().AbsoluteUri;
 
-    public override string ProviderName => $"WebAuthenticationBroker";
-
-    public async override Task<IToken> LoginAsync(string[] scopes)
-    {
-        string accessToken = string.Empty;
-        Logger.Log("Logging in with WebAuthenticationBroker...");
-
-#if WINDOWS_UWP
-        var redirectUri = WebAuthenticationBroker.GetCurrentApplicationCallbackUri().AbsoluteUri;
-        //var redirectUri = NativeClientRedirectUri;
-
-        var state = Guid.NewGuid().ToString();
-        var nonce = Guid.NewGuid().ToString();
+        string state = Guid.NewGuid().ToString();
+        string nonce = Guid.NewGuid().ToString();
 
         string url = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
         string scope = string.Join(' ', scopes.Select(Uri.EscapeDataString));
 
-        var uri = new Uri($"{url}?" +
-            $"client_id={ClientId}&" +
+        Uri uri = new($"{url}?" +
+            $"client_id={clientId}&" +
+            $"tenant_id={tenantId}&" + // TODO: needed?
             $"scope={scope} openid&" +
             $"response_type=token&" +
             $"state={Uri.EscapeDataString(state)}&" +
@@ -48,106 +52,73 @@ public class WABLoginProvider(IAADLogger Logger, IUserStore userStore, string cl
             $"redirect_uri={Uri.EscapeDataString(redirectUri)}");
         //+ $"prompt=select_account"); 
 
-        bool useEnterpriseAuth = true;
-        var options = useEnterpriseAuth == true ? WebAuthenticationOptions.UseCorporateNetwork : WebAuthenticationOptions.None;
+        bool useEnterpriseAuth = false;
+        var options = useEnterpriseAuth ? WebAuthenticationOptions.UseCorporateNetwork : WebAuthenticationOptions.None;
 
-        Logger.Log("Using Start URI: ");
-        Logger.Log(uri.AbsoluteUri);
+        Log.Info("Using Start URI: ");
+        Log.Info(uri.AbsoluteUri);
 
-        Logger.Log("Waiting for authentication...");
         try
         {
-            WebAuthenticationResult result;
+            Log.Info("Trying silent authentication");
 
-            Logger.Log("Trying silent auth");
+            WebAuthenticationResult result = await CoreApplication.MainView.CoreWindow.Dispatcher.RunTaskAsync(
+                () => WebAuthenticationBroker.AuthenticateSilentlyAsync(uri).AsTask());
 
-            TaskCompletionSource<WebAuthenticationResult> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            await Windows.ApplicationModel.Core.CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, async () =>
+            Log.Info($"Silent authentication result: {result.ResponseStatus}");
+
+            if (result.ResponseStatus is not WebAuthenticationStatus.Success)
             {
-                try
-                {
-                    tcs.SetResult(await WebAuthenticationBroker.AuthenticateSilentlyAsync(uri));
-                }
-                catch (Exception ex)
-                {
-                    tcs.SetException(ex);
-                }
-            }).AsTask();
-            result = await tcs.Task;
-            Logger.Log($"Silent Auth result: {result.ResponseStatus}");
-
-            if (result.ResponseStatus != WebAuthenticationStatus.Success)
-            {
-                Logger.Log($"{result.ResponseData} : [{result.ResponseErrorDetail}]");
-                Logger.Log("Trying UI auth");
-
-                tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-                await Windows.ApplicationModel.Core.CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, async () =>
-                {
-                    try
-                    {
-                        var res = await WebAuthenticationBroker.AuthenticateAsync(WebAuthenticationOptions.None, uri, new Uri(redirectUri));
-                        tcs.SetResult(res);
-                    }
-                    catch (Exception ex)
-                    {
-                        tcs.SetException(ex);
-                    }
-                }).AsTask();
-                result = await tcs.Task;
+                Log.Err($"{result.ResponseData} : [{result.ResponseErrorDetail}]");
+                Log.Info("Trying interactive authentication");
+                result = await CoreApplication.MainView.CoreWindow.Dispatcher.RunTaskAsync(
+                    () => WebAuthenticationBroker.AuthenticateAsync(WebAuthenticationOptions.None, uri, new Uri(redirectUri)).AsTask());
             }
-
-            Logger.Log("Waiting for authentication complete.");
 
             switch (result.ResponseStatus)
             {
                 case WebAuthenticationStatus.Success:
-                    Logger.Log("Authentication Successful!");
-                    Logger.Log("Received data:");
-                    Logger.Log(result.ResponseData);
-                    accessToken = result.ResponseData.Split('=')[1];
+                    Log.Info("Authentication Successful!");
+                    Log.Info("Received data:");
+                    Log.Info(result.ResponseData);
+                    AccessToken = result.ResponseData.Split('=')[1];
                     break;
                 case WebAuthenticationStatus.UserCancel:
-                    Logger.Log("User cancelled authentication. Try again.");
+                    Log.Info("User cancelled authentication. Try again.");
                     break;
                 case WebAuthenticationStatus.ErrorHttp:
-                    Logger.Log("HTTP Error. Try again.");
-                    Logger.Log(result.ResponseErrorDetail.ToString());
+                    Log.Err("HTTP Error. Try again.");
+                    Log.Err(result.ResponseErrorDetail.ToString());
                     break;
                 default:
-                    Logger.Log("Unknown Response");
+                    Log.Err("Unknown Response");
                     break;
             }
         }
-        catch (Exception e)
+        catch (Exception ex)
         {
-            Logger.Log($"Unhandled {e} - {e.Message}");
+            Log.Err($"Unhandled {ex} - {ex.Message}");
         }
-#endif
 
-        AADToken = accessToken;
-        return new AADToken(accessToken);
+        return AccessToken;
     }
 
-    public override async Task SignOutAsync()
+    /// <inheritdoc/>
+    public async Task LogoutAsync()
     {
-        Logger.Clear();
-        Logger.Log("Sign out initiated...");
-#if WINDOWS_UWP
-        var redirectUri = WebAuthenticationBroker.GetCurrentApplicationCallbackUri().AbsoluteUri;
-        var state = Guid.NewGuid().ToString();
-        var logoutUrl = "https://login.microsoftonline.com/common/oauth2/v2.0/logout";
+        //string redirectUri = WebAuthenticationBroker.GetCurrentApplicationCallbackUri().AbsoluteUri;
+        string state = Guid.NewGuid().ToString();
+        string logoutUrl = "https://login.microsoftonline.com/common/oauth2/v2.0/logout";
 
-        var uri = new Uri($"{logoutUrl}?" +
-            $"state={Uri.EscapeDataString(state)}");
+        Uri uri = new($"{logoutUrl}?state={Uri.EscapeDataString(state)}");
+        Log.Info($"Using sign out URI: {uri.AbsoluteUri}");
 
-        Logger.Log($"Using sign out URI: {uri.AbsoluteUri}");
-
-        Logger.Log($"Waiting for sign out...");
-        var result = await WebAuthenticationBroker.AuthenticateAsync(WebAuthenticationOptions.None, uri);
-#endif
-        Username = string.Empty;
-        AADToken = string.Empty;
+        await WebAuthenticationBroker.AuthenticateAsync(WebAuthenticationOptions.None, uri);
         AccessToken = string.Empty;
+        Username = string.Empty;
     }
+
+    /// <inheritdoc/>
+    public void ClearUser() => userStore.ClearUser(UserIdKey);
 }
+#endif
