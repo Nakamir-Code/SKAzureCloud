@@ -41,16 +41,15 @@ public class MSALLoginProvider(IUserStore userStore, string clientId, string ten
     /// <inheritdoc/>
     public string Username { get; private set; }
 
+    private IPublicClientApplication _publicClientApplication;
+
     /// <inheritdoc/>
     public async Task<string> LoginAsync(string[] scopes)
     {
         Log.Info("Logging in with MSAL...");
         string url = $"https://login.microsoftonline.com/{tenantId}";
 
-        string userId = userStore.GetUserId(UserIdKey);
-        Log.Info("User Id: " + userId);
-
-        var app = PublicClientApplicationBuilder.Create(clientId)
+        _publicClientApplication ??= PublicClientApplicationBuilder.Create(clientId)
             .WithAuthority(url)
             .WithBroker()
             .WithWindowsBrokerOptions(new WindowsBrokerOptions
@@ -61,20 +60,12 @@ public class MSALLoginProvider(IUserStore userStore, string clientId, string ten
             .WithLogging(LoggingCallback)
             .Build();
 
-        IAccount account = null;
-        if (!string.IsNullOrEmpty(userId))
-        {
-            account = await app.GetAccountAsync(userId);
-            if (account is not null)
-            {
-                Log.Info($"Account found id = {account.HomeAccountId}");
-            }
-        }
+        IAccount account = await FindAccountAsync().ConfigureAwait(false);
 
         AuthenticationResult authResult = null;
         try
         {
-            authResult = await app.AcquireTokenSilent(scopes, account).ExecuteAsync();
+            authResult = await _publicClientApplication.AcquireTokenSilent(scopes, account).ExecuteAsync();
         }
         catch (MsalUiRequiredException)
         {
@@ -84,7 +75,7 @@ public class MSALLoginProvider(IUserStore userStore, string clientId, string ten
                 {
 #if WINDOWS_UWP
                     authResult = await CoreApplication.MainView.CoreWindow.Dispatcher.RunTaskAsync(
-                        () => app.AcquireTokenInteractive(scopes)
+                        () => _publicClientApplication.AcquireTokenInteractive(scopes)
                                  .WithLoginHint(LoginHint ?? string.Empty)
                                  .ExecuteAsync());
 #else
@@ -93,7 +84,7 @@ public class MSALLoginProvider(IUserStore userStore, string clientId, string ten
                 }
                 else
                 {
-                    authResult = await app.AcquireTokenWithDeviceCode(scopes, async deviceCodeResult =>
+                    authResult = await _publicClientApplication.AcquireTokenWithDeviceCode(scopes, async deviceCodeResult =>
                     {
                         Log.Info(deviceCodeResult.Message);
                         await CoreApplication.MainView.CoreWindow.Dispatcher.RunTaskAsync(
@@ -140,16 +131,41 @@ public class MSALLoginProvider(IUserStore userStore, string clientId, string ten
     }
 
     /// <inheritdoc/>
-    public Task LogoutAsync()
+    public async Task LogoutAsync()
     {
+        if (_publicClientApplication is not null)
+        {
+            IAccount account = await FindAccountAsync().ConfigureAwait(false);
+            if (account is not null)
+            {
+                await _publicClientApplication.RemoveAsync(account).ConfigureAwait(false);
+            }
+        }
         userStore.ClearUser(UserIdKey);
         AccessToken = string.Empty;
         Username = string.Empty;
-        return Task.CompletedTask;
     }
 
     /// <inheritdoc/>
     public void ClearUser() => userStore.ClearUser(UserIdKey);
+
+    private async Task<IAccount> FindAccountAsync()
+    {
+        string userId = userStore.GetUserId(UserIdKey);
+        Log.Info("User Id: " + userId);
+
+        IAccount account = null;
+        if (!string.IsNullOrEmpty(userId))
+        {
+            account = await _publicClientApplication!.GetAccountAsync(userId).ConfigureAwait(false) ?? PublicClientApplication.OperatingSystemAccount;
+            if (account is not null)
+            {
+                Log.Info($"Account found id = {account.HomeAccountId}");
+                LoginHint = account.Username;
+            }
+        }
+        return account;
+    }
 
     private void LoggingCallback(Microsoft.Identity.Client.LogLevel level, string message, bool containsPii)
     {
