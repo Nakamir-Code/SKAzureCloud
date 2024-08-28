@@ -5,6 +5,7 @@ namespace SKAzureCloud;
 
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using global::Azure.Core;
@@ -14,6 +15,7 @@ using Nakamir.Security;
 using Nakamir.Security.LoginProviders;
 using StereoKit;
 using StereoKit.Framework;
+using Windows.ApplicationModel.Core;
 using Windows.System;
 
 internal class AzureAuthenticationSample
@@ -26,7 +28,7 @@ internal class AzureAuthenticationSample
     private const string CustomTenantId = "common"; // Alternatively "[Enter your tenant, as obtained from the Azure portal, e.g. nakamir.onmicrosoft.com]"
     private const string Resource = "organizations";
     private const string CustomResource = "consumers";
-    private const string BlobUrl = "https://your-storage-account.blob.core.windows.net/container-name/blob-name";
+    private const string BlobUrl = "https://stapidevusw001.blob.core.windows.net/komatsu/blob-name";
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     private static bool UseCustomTenantId;
@@ -65,7 +67,13 @@ internal class AzureAuthenticationSample
             string resource = UseCustomResource ? CustomResource : Resource;
             sample.CurrentLoginProvider = providerType switch
             {
-                LoginProviderType.MSAL => new MSALLoginProvider(sample.UserStore, ClientId, tenantId),
+                LoginProviderType.MSAL => new MSALLoginProvider(sample.UserStore, ClientId, tenantId,
+                redirectUri: "https://login.microsoftonline.com/common/oauth2/nativeclient", () =>
+                {
+                    dynamic coreWindow = CoreApplication.MainView.CoreWindow;
+                    ICoreWindowInterop interop = (ICoreWindowInterop)coreWindow;
+                    return interop.WindowHandle;
+                }),
                 LoginProviderType.WAB => new WABLoginProvider(sample.UserStore, ClientId, tenantId),
                 LoginProviderType.WAM => new WAMLoginProvider(sample.UserStore, ClientId, tenantId, resource, biometricsRequired: false),
                 LoginProviderType.WAMWAB => new WAMWABLoginProvider(sample.UserStore, ClientId, tenantId, resource),
@@ -166,6 +174,14 @@ internal class AzureAuthenticationSample
                     if (UI.Toggle(useDeviceCodeFlow ? "Yes" : "No", ref useDeviceCodeFlow))
                     {
                         msalLoginProvider.UseDeviceCodeFlow = useDeviceCodeFlow;
+                    }
+
+                    UI.Label("Use Embedded or System UI?");
+                    UI.SameLine();
+                    bool useEmbedded = msalLoginProvider.UseEmbedded;
+                    if (UI.Button(useEmbedded ? "Embedded" : "System"))
+                    {
+                        msalLoginProvider.UseEmbedded = !msalLoginProvider.UseEmbedded;
                     }
                 }
                 UI.PopEnabled();
@@ -310,5 +326,13 @@ internal class AzureAuthenticationSample
         {
             return new ValueTask<AccessToken>(new AccessToken(accessToken, DateTimeOffset.MaxValue));
         }
+    }
+
+    [ComImport, Guid("45D64A29-A63E-4CB6-B498-5781D298CB4F")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    public interface ICoreWindowInterop
+    {
+        public IntPtr WindowHandle { get; }
+        public bool MessageHandled { set; }
     }
 }
