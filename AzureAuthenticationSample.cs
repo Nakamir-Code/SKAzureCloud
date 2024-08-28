@@ -28,7 +28,7 @@ internal class AzureAuthenticationSample
     private const string CustomTenantId = "common"; // Alternatively "[Enter your tenant, as obtained from the Azure portal, e.g. nakamir.onmicrosoft.com]"
     private const string Resource = "organizations";
     private const string CustomResource = "consumers";
-    private const string BlobUrl = "https://stapidevusw001.blob.core.windows.net/komatsu/blob-name";
+    private const string BlobUrl = "https://your-storage-account.blob.core.windows.net/container-name/blob-name";
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     private static bool UseCustomTenantId;
